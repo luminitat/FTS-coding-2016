@@ -1,0 +1,177 @@
+wd <- "D:/Documents/"
+setwd(wd)
+data <- read.csv("fts.csv",header=TRUE,skip=5,na.strings="",as.is=TRUE)
+
+#Parse numbers (removing commas)
+data <- transform(data,project.code=as.numeric(gsub(",","",project.code)))
+data <- transform(data,USD.committed.contributed=as.numeric(gsub(",","", USD.committed.contributed)))
+data <- transform(data,Project.current.request=as.numeric(gsub(",","", Project.current.request)))
+data <- transform(data,Item.ID=as.numeric(gsub(",","", Item.ID)))
+
+
+#construct a fake deflator with donor, year, and a random value
+donorList <- unique(data$Donor)
+fakeDeflator <- runif(length(donorList))
+fakeDeflatorYear <- rep(2016)
+deflator <- data.frame(donorList,fakeDeflatorYear,fakeDeflator)
+#Make deflator names match data
+names(deflator) <- c("Donor","Appeal.year","deflator")
+#Add deflator to dataset by matching unique combinations of donor and appeal year
+data <- merge(
+  data
+  ,deflator
+  ,by=c("Donor","Appeal.year")
+  ,all.x=TRUE
+)
+#Create deflated value by multiplying contributed*deflator
+data <- transform(data,contributedDeflated=USD.committed.contributed*deflator)
+data <- transform(data,pledgedDeflated=USD.pledged*deflator)
+
+
+#Sample transform to new column
+data <- transform(data,millionsContributed=USD.committed.contributed/1000000)
+data <- transform(data,millionsPledged=USD.pledged/1000000)
+data <- transform(data,millionsContributeddeflated=contributedDeflated/1000000)
+data <- transform(data,millionsPledgeddeflated=pledgedDeflated/1000000)
+
+
+#Example String transformations
+data <- transform(data,USAisDONOR = (Donor=="United States of America") )
+
+#Example write
+write.csv(data,"fts_transformed.csv",na="",row.names=FALSE)
+
+
+#Merge to create new column "Code name" based on donor type
+Donor <- unique(data$Donor)
+codename <- c("academia/think/research","CERF","CHF","DAC governments","EC","ERF","foundations","NDD","NGOs","other","Other multi","Other pooled","private individual organisations","private sector corporations","red cross","UN Multi")
+code.name <- data.frame(Donor,code.name)
+data <- merge(
+  data
+  ,code.name
+  ,by=c("Donor")
+  ,all.x=TRUE
+)
+data <- transform(data,codename=code.name[Donor])
+
+
+#Merge used to create new column "Private money" based on donor type
+private <- c("private","no")
+private.money <- data.frame(Donor,private.money)
+data <- merge(
+  data
+  ,code.name
+  ,by=c("Donor")
+  ,all.x=TRUE
+)
+
+
+data <- read.csv("otherprivateorgs.csv",header=TRUE,na.strings="",as.is=TRUE)
+otherprivateorgs <- c("Org name") 
+
+data <- merge(
+  data
+  ,otherprivateorgs
+  ,by=c("Donor", "Org name")
+  ,all.x=TRUE
+)
+
+if codename = "private sector corporations" OR "foundations" OR "private individual organisations"
+private="private"
+else 
+  if 
+  otherprivateorgs = "private"
+  private = "private"
+ else 
+  private.money="no"
+
+
+#Merge to create new column "Donor DAC region" based on country list of DAC regions
+  OECDregionname <- c("Europe","FAr East Asia","Middle East","North & Central America","North of Sahara","Oceania","South & Central Asia","South America","South of Sahara")
+  oecdregion.donor <- data.frame(Donor, OECDCountry)
+  data <- merge(
+    data
+    ,OECDcountry
+    ,by=c("Donor")
+    ,all.x=TRUE
+  )
+data <- transform(data,OECDcountry=oecdregion.donor[Donor])
+
+#Merge to create new column "Donor UN region" based on country list of UN regions; replicate as above
+
+
+#Merge to create new column "Appealing agency code name" based on appealing agency 
+Appealingagency <- unique(data$Appealingagency)
+appelaingagency <- c("academia/think/research","CERF","CHF","DAC governments","EC","ERF","foundations","NDD","NGOs","other","Other multi","Other pooled","private individual organisations","private sector corporations","red cross","UN Multi")
+appealing.agency <- data.frame(Appealingagency,appealing.agency)
+data <- merge(
+  data
+  ,code.name
+  ,by=c("Appealingagency")
+  ,all.x=TRUE
+)
+data <- transform(data,appealingagency=appealing.agency[Appealingagency])
+
+
+#Merge to create new column "NGO type" based on appealing agency type
+NGOtype <- unique(data$NGO)
+NGOtype <- c("Affiliated national NGO","International NGO","National NGO","Local NGO","Undefined","SINGO")
+ngo.code <- data.frame(Appealingagency,NGO)
+data <- merge(
+  data
+  ,code.name
+  ,by=c("Appealingagency")
+  ,all.x=TRUE
+)
+data <- transform(data,NGOtype=ngo.code[Appealingagency])
+
+
+#Merge to create new column "Appealing agency DAC region" based on country list of DAC regions
+OECDregionagency <- c("Europe","FAr East Asia","Middle East","North & Central America","North of Sahara","Oceania","South & Central Asia","South America","South of Sahara")
+oecdregion.agency <- data.frame(Appealingagency, OECDCountry)
+data <- merge(
+  data
+  ,OECDregionagency
+  ,by=c("Appealingagency")
+  ,all.x=TRUE
+)
+data <- transform(data,OECDregionagency=oecdregion.agency[appelaingagency])
+
+#Merge to create new column "Appealing agency UN region" based on country list of UN regions; replicate as above
+
+#Create new column "Channels" based on appealing agency code name
+Channels <- c("Multilateral","Public sector","Red Cross","NGOs and CSOs","Other")
+if appealingagency = "CHF" OR "ERF" OR "Other pooled" OR "CERF" OR "UN Multi" OR "Other Multi"
+Channels = "Multilateral" else
+  if appealingagency = "DAC government" OR "NDD" OR "EC" Channels = "Public sector" else
+    if appealingagency = "red cross" Channels = "Red Cross" else
+      if appealingagency = "NGOs" OR "foundations" OR "academia/think/research" Channels = "NGOs and CSOs" else
+        if appealingagency = "private sector corporations" OR "private individual organisations" OR "other" Channels = "Other" else
+          Channels = "Code not found"
+
+#Create new column "Domestic response" based on donor is same as destination country
+destinationcountry <- c(DestinationCountry)
+domesticresponse <- c("Domestic","No")
+if Donor = Destinationcountry 
+  domesticresponse = "Domestic" else domesticresponse = "No"
+
+
+#Merge to create new column "Fragile states" based on country list 
+fragilestaes <- c("Fragile","No")
+fragile.country <- data.frame(destinationcountry, fragilestate)
+  data <- merge(
+    data
+    ,fragilestaes
+    ,by=c("Destination Country")
+    ,all.x=TRUE
+  )
+
+data <- transform(data,fragilestaes=fragile.country[destinationcountry])
+  
+
+#Replicate above for environmentally vulnerable; income groups; developing countries lists
+
+#how do I make sure about country names being same?!
+
+
+
